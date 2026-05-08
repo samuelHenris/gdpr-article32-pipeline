@@ -1,0 +1,38 @@
+version: 0.2
+
+env:
+  parameter-store:
+    DEEPSEEK_API_KEY: "/gdpr-pipeline/deepseek-api-key"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip install bandit trufflehog safety openai
+      - wget -q https://github.com/aquasecurity/trivy/releases/download/v0.49.0/trivy_0.49.0_Linux-64bit.deb
+      - dpkg -i trivy_0.49.0_Linux-64bit.deb 2>/dev/null || true
+
+  pre_build:
+    commands:
+      - echo "Running security scans"
+      - bandit -r src/ -lll || SECURITY_FAIL=1
+      - trufflehog filesystem --no-verification src/ || SECURITY_FAIL=1
+      - safety check -r src/requirements.txt || SECURITY_FAIL=1
+      - docker build -t gdpr-app src/
+      - trivy image --severity HIGH,CRITICAL --exit-code 1 gdpr-app || SECURITY_FAIL=1
+      - python pipeline/gdpr_validator.py || GDPR_FAIL=1
+      
+      - |
+        if [ -n "$SECURITY_FAIL" ] || [ -n "$GDPR_FAIL" ]; then
+          echo "Pipeline blocked: Compliance violations detected"
+          exit 1
+        fi
+
+  build:
+    commands:
+      - echo "All checks passed - building final image"
+
+artifacts:
+  files:
+    - '**/*'
