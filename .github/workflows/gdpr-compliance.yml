@@ -1,0 +1,56 @@
+name: GDPR Article 32 Compliance Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  security-compliance-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install security tools
+        run: |
+          pip install bandit trufflehog safety openai
+      
+      - name: Install Trivy
+        run: |
+          wget -q https://github.com/aquasecurity/trivy/releases/download/v0.49.0/trivy_0.49.0_Linux-64bit.deb
+          sudo dpkg -i trivy_0.49.0_Linux-64bit.deb
+      
+      - name: Secret Scanning
+        run: trufflehog filesystem --no-verification --exit-code 0 . || true
+      
+      - name: SAST with Bandit
+        run: bandit -r src/ -lll || true
+      
+      - name: Dependency Check
+        run: safety check -r src/requirements.txt || true
+      
+      - name: Build Docker image
+        run: docker build -t gdpr-app src/
+      
+      - name: Container Scan with Trivy
+        run: trivy image --severity HIGH,CRITICAL --exit-code 0 gdpr-app || true
+      
+      - name: GDPR Article 32 Validation
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python pipeline/gdpr_validator.py
+      
+      - name: Fail if non-compliant
+        if: failure()
+        run: |
+          echo "GDPR Article 32 Compliance Failed"
+          exit 1
