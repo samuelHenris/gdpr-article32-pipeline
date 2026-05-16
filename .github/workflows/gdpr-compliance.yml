@@ -26,8 +26,8 @@ jobs:
       
       - name: Install Trivy
         run: |
-          wget -q https://github.com/aquasecurity/trivy/releases/download/v0.49.0/trivy_0.49.0_Linux-64bit.deb
-          sudo dpkg -i trivy_0.49.0_Linux-64bit.deb
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          trivy --version
       
       - name: Secret Scanning
         run: trufflehog filesystem --no-verification --exit-code 0 . || true
